@@ -1,313 +1,252 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>High-Precision 3D Earth Model</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #000;
-        }
-        #canvas-container {
-            width: 100vw;
-            height: 100vh;
-        }
-        #info {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #fff;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 15px;
-            border-radius: 8px;
-            font-size: 14px;
-            line-height: 1.6;
-            backdrop-filter: blur(10px);
-        }
-        #info h1 {
-            font-size: 18px;
-            margin-bottom: 10px;
-        }
-        #loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #fff;
-            font-size: 24px;
-            text-align: center;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>3D Rotating Earth (PBR)</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      height: 100%;
+      width: 100%;
+    }
+    #app {
+      width: 100vw;
+      height: 100vh;
+    }
+    .info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 6px 10px;
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 12px;
+      border-radius: 4px;
+      z-index: 10;
+    }
+  </style>
 </head>
 <body>
-    <div id="canvas-container"></div>
-    <div id="info">
-        <h1>🌍 High-Precision 3D Earth Model</h1>
-        <p>Left Drag: Rotate Camera</p>
-        <p>Scroll: Zoom In/Out</p>
-        <p>Right Drag: Pan</p>
-    </div>
-    <div id="loading">Loading Earth...</div>
+<div id="app"></div>
+<div class="info">
+  🛰 3D Earth Demo – Orbit: 左ドラッグ / ズーム: ホイール / パン: 右ドラッグ
+</div>
 
-    <!-- Three.js CDN -->
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-        }
+<script type="module">
+  import * as THREE from 'https://unpkg.com/three@0.164.0/build/three.module.js';
+  import { OrbitControls } from 'https://unpkg.com/three@0.164.0/examples/jsm/controls/OrbitControls.js';
+
+  // --- 基本セットアップ ------------------------------------------------------
+  const container = document.getElementById('app');
+
+  const scene = new THREE.Scene();
+  // 深宇宙っぽい少しだけ青味のある黒
+  scene.background = new THREE.Color(0x000008);
+
+  const camera = new THREE.PerspectiveCamera(
+    45,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
+  );
+  // 地球から少し離れた位置
+  camera.position.set(0, 0, 4);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  container.appendChild(renderer.domElement);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.enablePan = true;
+  controls.minDistance = 1.8;
+  controls.maxDistance = 10;
+
+  // --- ライティング（太陽光 + 弱い環境光） -----------------------------------
+  // 太陽光（DirectionalLight）: 昼夜境界を作る主光源
+  const sunLight = new THREE.DirectionalLight(0xffffff, 2.0);
+  // 位置は「太陽側」 – 後で方向を変えれば時間変化も可能
+  sunLight.position.set(5, 2, 3);
+  scene.add(sunLight);
+
+  // 夜側が完全に真っ黒になりすぎないように、弱い環境光を追加
+  const ambientLight = new THREE.AmbientLight(0x222233, 0.6);
+  scene.add(ambientLight);
+
+  // --- テクスチャ読み込み ----------------------------------------------------
+  const textureLoader = new THREE.TextureLoader();
+
+  // ★ここを実際のファイルURLに差し替えてください（NASA Blue Marble / satellite など）
+  // 例:
+  // const EARTH_ALBEDO_URL   = 'your_path/earth_albedo.jpg';
+  // const EARTH_NORMAL_URL   = 'your_path/earth_normal.jpg';
+  // const EARTH_ROUGH_URL    = 'your_path/earth_roughness.jpg';
+  // const EARTH_METAL_URL    = 'your_path/earth_metallic.jpg';
+  // const EARTH_AO_URL       = 'your_path/earth_ao.jpg';
+  // const CLOUDS_ALPHA_URL   = 'your_path/clouds_alpha.png';
+  const EARTH_ALBEDO_URL =  'textures/earth_albedo.jpg';   // 地表カラー（Blue Marble）
+  const EARTH_NORMAL_URL =  'textures/earth_normal.jpg';   // 法線マップ
+  const EARTH_ROUGH_URL =   'textures/earth_roughness.jpg';
+  const EARTH_METAL_URL =   'textures/earth_metallic.jpg';
+  const EARTH_AO_URL =      'textures/earth_ao.jpg';
+  const CLOUDS_ALPHA_URL =  'textures/earth_clouds_alpha.png';
+
+  // --- 地表レイヤー（unit sphere, PBRマテリアル） ---------------------------
+  const radiusSurface = 1.0; // unit sphere
+  const widthSegments = 128;
+  const heightSegments = 128;
+
+  const surfaceGeo = new THREE.SphereGeometry(radiusSurface, widthSegments, heightSegments);
+  // aoMap用にUV2を複製
+  surfaceGeo.setAttribute('uv2', new THREE.BufferAttribute(surfaceGeo.attributes.uv.array, 2));
+
+  const earthMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,          // map(アルベド)で上書きされる
+    metalness: 0.0,
+    roughness: 1.0
+  });
+
+  // テクスチャ読み込み & 適用
+  const earthAlbedo   = textureLoader.load(EARTH_ALBEDO_URL, () => { renderOnce(); });
+  earthAlbedo.colorSpace = THREE.SRGBColorSpace;
+
+  const earthNormal   = textureLoader.load(EARTH_NORMAL_URL, () => { renderOnce(); });
+  const earthRough    = textureLoader.load(EARTH_ROUGH_URL, () => { renderOnce(); });
+  const earthMetal    = textureLoader.load(EARTH_METAL_URL, () => { renderOnce(); });
+  const earthAO       = textureLoader.load(EARTH_AO_URL, () => { renderOnce(); });
+
+  earthMaterial.map          = earthAlbedo;
+  earthMaterial.normalMap    = earthNormal;
+  earthMaterial.roughnessMap = earthRough;
+  earthMaterial.metalnessMap = earthMetal;
+  earthMaterial.aoMap        = earthAO;
+
+  // 海のスペキュラ反射を強調するために、全体をやや「メタル感+低ラフネス」に寄せる
+  earthMaterial.metalness = 0.25;
+  earthMaterial.roughness = 0.5;
+
+  const earthMesh = new THREE.Mesh(surfaceGeo, earthMaterial);
+  scene.add(earthMesh);
+
+  // --- 雲レイヤー ------------------------------------------------------------
+  const radiusClouds = 1.02;
+  const cloudsGeo = new THREE.SphereGeometry(radiusClouds, widthSegments, heightSegments);
+
+  const cloudsTexture = textureLoader.load(CLOUDS_ALPHA_URL, () => { renderOnce(); });
+  cloudsTexture.colorSpace = THREE.SRGBColorSpace;
+
+  const cloudsMat = new THREE.MeshStandardMaterial({
+    map: cloudsTexture,
+    transparent: true,
+    opacity: 0.8,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+
+  const cloudsMesh = new THREE.Mesh(cloudsGeo, cloudsMat);
+  scene.add(cloudsMesh);
+
+  // --- 大気レイヤー（簡易Fresnel風シェーダー） -----------------------------
+  const radiusAtmosphere = 1.06;
+  const atmosphereGeo = new THREE.SphereGeometry(radiusAtmosphere, 64, 64);
+
+  const atmosphereVert = /* glsl */`
+    varying vec3 vWorldPosition;
+    void main() {
+      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPosition.xyz;
+      gl_Position = projectionMatrix * viewMatrix * worldPosition;
     }
-    </script>
+  `;
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  const atmosphereFrag = /* glsl */`
+    varying vec3 vWorldPosition;
+    uniform vec3 cameraPositionWorld;
+    void main() {
+      // カメラからの視線方向
+      vec3 viewDir = normalize(vWorldPosition - cameraPositionWorld);
+      // 法線は球の中心から外向き
+      vec3 normal = normalize(vWorldPosition);
 
-        // ==================== Scene Setup ====================
-        const scene = new THREE.Scene();
-        
-        // カメラ設定（PerspectiveCamera）
-        const camera = new THREE.PerspectiveCamera(
-            45, // FOV
-            window.innerWidth / window.innerHeight, // アスペクト比
-            0.1, // Near clip
-            1000 // Far clip
-        );
-        camera.position.set(0, 0, 4); // 地球から少し離れた位置
+      // Fresnel 風: 縁ほど強く発光
+      float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0);
 
-        // レンダラー設定
-        const renderer = new THREE.WebGLRenderer({ 
-            antialias: true, // アンチエイリアス有効
-            alpha: true 
-        });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        
-        // 色空間とトーンマッピング設定（Three.js推奨設定）
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0;
-        
-        document.getElementById('canvas-container').appendChild(renderer.domElement);
+      vec3 atmosphereColor = vec3(0.25, 0.5, 1.0); // 青っぽい大気
+      gl_FragColor = vec4(atmosphereColor * fresnel * 1.5, fresnel);
+    }
+  `;
 
-        // OrbitControls設定
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true; // スムーズな動き
-        controls.dampingFactor = 0.05;
-        controls.minDistance = 1.5; // 最小ズーム距離
-        controls.maxDistance = 10; // 最大ズーム距離
-        controls.enablePan = true; // パン操作を有効化
+  const atmosphereMat = new THREE.ShaderMaterial({
+    vertexShader: atmosphereVert,
+    fragmentShader: atmosphereFrag,
+    uniforms: {
+      cameraPositionWorld: { value: new THREE.Vector3() }
+    },
+    side: THREE.BackSide,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
 
-        // 宇宙背景（深い宇宙空間の表現）
-        scene.background = new THREE.Color(0x000000);
+  const atmosphereMesh = new THREE.Mesh(atmosphereGeo, atmosphereMat);
+  scene.add(atmosphereMesh);
 
-        // ==================== Lighting ====================
-        // 太陽光（DirectionalLight）- 地球の片側を照らす
-        const sunLight = new THREE.DirectionalLight(0xffffff, 2.5);
-        sunLight.position.set(5, 0, 5);
-        scene.add(sunLight);
+  // --- 星背景（オプションの星空） -------------------------------------------
+  const starGeo = new THREE.SphereGeometry(50, 32, 32);
+  const starMat = new THREE.MeshBasicMaterial({
+    color: 0x050510,
+    side: THREE.BackSide
+  });
+  const starMesh = new THREE.Mesh(starGeo, starMat);
+  scene.add(starMesh);
 
-        // 弱い環境光（夜側が真っ暗にならないように）
-        const ambientLight = new THREE.AmbientLight(0x333333, 0.3);
-        scene.add(ambientLight);
+  // --- アニメーションループ --------------------------------------------------
+  const clock = new THREE.Clock();
 
-        // ==================== Texture Loader ====================
-        const textureLoader = new THREE.TextureLoader();
+  function animate() {
+    requestAnimationFrame(animate);
 
-        // テクスチャURL（実際の使用時はNASA Blue Marbleなどの高解像度画像を使用）
-        // 例: https://eoimages.gsfc.nasa.gov/images/imagerecords/
-        const earthTextures = {
-            // アルベドマップ（地形・海）
-            map: 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg',
-            // 法線マップ（地形の凹凸）
-            normalMap: 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg',
-            // スペキュラマップ（海面反射用）
-            specularMap: 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_specular_2048.jpg',
-            // 雲マップ（透明度付き）
-            clouds: 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_1024.png'
-        };
+    const delta = clock.getDelta();
 
-        // テクスチャ読み込みとsRGB色空間設定
-        const earthMap = textureLoader.load(earthTextures.map);
-        earthMap.colorSpace = THREE.SRGBColorSpace;
-        
-        const normalMap = textureLoader.load(earthTextures.normalMap);
-        const specularMap = textureLoader.load(earthTextures.specularMap);
-        const cloudsMap = textureLoader.load(earthTextures.clouds);
+    // 地球の自転（Y軸中心）
+    earthMesh.rotation.y += delta * 0.1;     // 約 0.1 rad / sec
+    // 雲は少し速く動かす
+    cloudsMesh.rotation.y += delta * 0.15;
 
-        // ==================== Earth Surface Layer ====================
-        // 単位球（半径1.0）で地表を作成
-        const earthGeometry = new THREE.SphereGeometry(
-            1.0, // 半径
-            128, // 水平セグメント数（極地の歪み防止）
-            128  // 垂直セグメント数
-        );
+    // 大気シェーダーにカメラ位置を渡す
+    atmosphereMat.uniforms.cameraPositionWorld.value.copy(camera.position);
 
-        // PBR Material（Physically Based Rendering）
-        const earthMaterial = new THREE.MeshStandardMaterial({
-            map: earthMap, // アルベドマップ
-            normalMap: normalMap, // 法線マップ
-            normalScale: new THREE.Vector2(0.85, 0.85), // 法線の強さ
-            roughnessMap: specularMap, // ラフネスマップ（反転使用）
-            roughness: 0.9, // 陸地のラフネス
-            metalnessMap: specularMap, // メタリックマップ（海面用）
-            metalness: 0.1, // 海面のメタリック値（スペキュラ反射）
-            // 環境光遮蔽（実際の使用時はAOマップを追加可能）
-            // aoMap: aoMap,
-            // aoMapIntensity: 1.0
-        });
+    controls.update();
+    renderer.render(scene, camera);
+  }
 
-        const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
-        scene.add(earthMesh);
+  // 最初の描画だけ走らせたいときに使用
+  function renderOnce() {
+    renderer.render(scene, camera);
+  }
 
-        // ==================== Cloud Layer ====================
-        // 雲レイヤー（地表より少し大きい半径）
-        const cloudsGeometry = new THREE.SphereGeometry(
-            1.01, // 地表より少し大きい
-            64,
-            64
-        );
+  animate();
 
-        const cloudsMaterial = new THREE.MeshStandardMaterial({
-            map: cloudsMap,
-            transparent: true,
-            opacity: 0.8,
-            depthWrite: false, // 透明度の問題を防ぐ
-            blending: THREE.NormalBlending
-        });
+  // --- リサイズ対応 ----------------------------------------------------------
+  window.addEventListener('resize', onWindowResize, false);
+  function onWindowResize() {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
 
-        const cloudsMesh = new THREE.Mesh(cloudsGeometry, cloudsMaterial);
-        scene.add(cloudsMesh);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
 
-        // ==================== Atmosphere Layer ====================
-        // 大気レイヤー用のカスタムシェーダー（Fresnel風の大気散乱）
-        const atmosphereVertexShader = `
-            varying vec3 vNormal;
-            varying vec3 vPosition;
-            
-            void main() {
-                vNormal = normalize(normalMatrix * normal);
-                vPosition = position;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `;
-
-        const atmosphereFragmentShader = `
-            varying vec3 vNormal;
-            varying vec3 vPosition;
-            
-            void main() {
-                // Fresnel効果（縁が光る）
-                vec3 viewDirection = normalize(cameraPosition - vPosition);
-                float intensity = pow(1.0 - abs(dot(vNormal, viewDirection)), 2.5);
-                
-                // 青い大気色
-                vec3 atmosphereColor = vec3(0.3, 0.6, 1.0);
-                
-                gl_FragColor = vec4(atmosphereColor, 1.0) * intensity;
-            }
-        `;
-
-        const atmosphereGeometry = new THREE.SphereGeometry(
-            1.05, // さらに大きい半径
-            64,
-            64
-        );
-
-        const atmosphereMaterial = new THREE.ShaderMaterial({
-            vertexShader: atmosphereVertexShader,
-            fragmentShader: atmosphereFragmentShader,
-            blending: THREE.AdditiveBlending,
-            side: THREE.BackSide, // 裏側から見えるように
-            transparent: true
-        });
-
-        const atmosphereMesh = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
-        scene.add(atmosphereMesh);
-
-        // ==================== Stars Background ====================
-        // 星空背景の追加（宇宙空間の表現）
-        const starsGeometry = new THREE.BufferGeometry();
-        const starPositions = [];
-        
-        for (let i = 0; i < 10000; i++) {
-            const x = (Math.random() - 0.5) * 2000;
-            const y = (Math.random() - 0.5) * 2000;
-            const z = (Math.random() - 0.5) * 2000;
-            starPositions.push(x, y, z);
-        }
-        
-        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
-        
-        const starsMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 1.5,
-            sizeAttenuation: true
-        });
-        
-        const stars = new THREE.Points(starsGeometry, starsMaterial);
-        scene.add(stars);
-
-        // ==================== Animation Loop ====================
-        let earthRotationSpeed = 0.0005; // 地球の自転速度（1秒あたり約0.03度）
-        let cloudRotationSpeed = 0.0003; // 雲の回転速度（地球より遅い）
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            // 地球の自転（Y軸周り）
-            earthMesh.rotation.y += earthRotationSpeed;
-            
-            // 雲のゆっくりした回転
-            cloudsMesh.rotation.y += cloudRotationSpeed;
-            
-            // 大気も地球と同期
-            atmosphereMesh.rotation.y += earthRotationSpeed;
-
-            // OrbitControlsの更新
-            controls.update();
-
-            // レンダリング
-            renderer.render(scene, camera);
-        }
-
-        // ==================== Window Resize Handler ====================
-        window.addEventListener('resize', () => {
-            // カメラのアスペクト比更新
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            
-            // レンダラーのサイズ更新
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        // ==================== Loading Complete ====================
-        // テクスチャ読み込み完了後にローディング表示を消す
-        const loadingElement = document.getElementById('loading');
-        let texturesLoaded = 0;
-        const totalTextures = 4;
-
-        function onTextureLoad() {
-            texturesLoaded++;
-            if (texturesLoaded === totalTextures) {
-                loadingElement.style.display = 'none';
-            }
-        }
-
-        earthMap.image.addEventListener('load', onTextureLoad);
-        normalMap.image.addEventListener('load', onTextureLoad);
-        specularMap.image.addEventListener('load', onTextureLoad);
-        cloudsMap.image.addEventListener('load', onTextureLoad);
-
-        // アニメーション開始
-        animate();
-    </script>
+    renderer.setSize(width, height);
+  }
+</script>
 </body>
 </html>
